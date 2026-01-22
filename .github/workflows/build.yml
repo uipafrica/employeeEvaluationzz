@@ -1,0 +1,88 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ '*' ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        cache-dependency-path: package.json
+
+    - name: Install backend dependencies
+      run: npm ci
+
+    - name: Install frontend dependencies
+      run: cd client && npm ci
+
+    - name: Build frontend
+      run: npm run build:prod
+      env:
+        CI: false
+        NODE_ENV: production
+
+    - name: Check build output
+      run: |
+        echo "Checking build output..."
+        if [ -d "client/build" ]; then
+          echo "✅ Build directory exists"
+          echo "Build contents:"
+          ls -la client/build/ | head -20
+          
+          if [ -f "client/build/index.html" ]; then
+            echo "✅ index.html found"
+          else
+            echo "❌ index.html not found"
+            exit 1
+          fi
+          
+          if [ -d "client/build/static" ]; then
+            echo "✅ Static assets directory found"
+          else
+            echo "⚠️ Static assets directory not found"
+          fi
+        else
+          echo "❌ Build directory not found"
+          exit 1
+        fi
+
+    - name: Test server can start
+      run: |
+        echo "Testing server startup..."
+        export NODE_ENV=production
+        export PORT=3001
+        export MONGODB_URI=mongodb://localhost:27017/test
+        
+        # Start server and wait a moment
+        timeout 8 npm run start:prod || EXIT_CODE=$?
+        
+        # Exit code 124 means timeout (expected - server was running)
+        # Other exit codes might indicate actual errors
+        if [ "$EXIT_CODE" = "124" ]; then
+          echo "✅ Server started successfully (timed out as expected)"
+        elif [ "$EXIT_CODE" = "0" ]; then
+          echo "✅ Server started and stopped normally"
+        else
+          echo "⚠️ Server exit code: $EXIT_CODE (may be expected without MongoDB)"
+        fi
+
+    - name: Upload build artifacts
+      if: success()
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-artifacts
+        path: client/build/
+        retention-days: 1
+

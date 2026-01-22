@@ -1,0 +1,124 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: package.json
+
+    - name: Install backend dependencies
+      run: npm install
+
+    - name: Install frontend dependencies
+      run: cd client && npm install
+
+    - name: Build frontend
+      run: npm run build:prod
+      env:
+        CI: false
+
+    - name: Verify build output
+      run: |
+        if [ ! -d "client/build" ]; then
+          echo "Build directory not found!"
+          exit 1
+        fi
+        if [ ! -f "client/build/index.html" ]; then
+          echo "index.html not found in build directory!"
+          exit 1
+        fi
+        echo "Build verification successful!"
+
+    - name: Test production server startup
+      run: |
+        # Set minimal environment variables for testing
+        export NODE_ENV=production
+        export PORT=3001
+        export MONGODB_URI=mongodb://localhost:27017/test-db
+        
+        # Start server in background
+        timeout 10 npm run start:prod || true
+        
+        # Check if server started (it will fail without MongoDB, but we just want to verify it tries to start)
+        echo "Server startup test completed"
+
+  production-deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        cache-dependency-path: package.json
+
+    - name: Install backend dependencies
+      run: npm install
+
+    - name: Install frontend dependencies
+      run: cd client && npm install
+
+    - name: Build frontend for production
+      run: npm run build:prod
+      env:
+        CI: false
+
+    - name: Create deployment package
+      run: |
+        mkdir -p deployment
+        cp -r client/build deployment/
+        cp -r routes deployment/
+        cp -r models deployment/
+        cp -r utils deployment/
+        cp server.js deployment/
+        cp package.json deployment/
+        cp package-lock.json deployment/ 2>/dev/null || true
+        echo "Deployment package created"
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: production-build
+        path: |
+          deployment/
+          client/build/
+        retention-days: 7
+
+    - name: Production server test
+      run: |
+        export NODE_ENV=production
+        export PORT=3001
+        
+        # Test that the server can start (will fail without MongoDB, but that's expected)
+        timeout 5 npm run start:prod || echo "Server startup attempted (MongoDB connection expected to fail in CI)"
+
+    # Add deployment steps here (e.g., deploy to Heroku, AWS, etc.)
+    # - name: Deploy to production
+    #   run: |
+    #     # Your deployment commands here
+

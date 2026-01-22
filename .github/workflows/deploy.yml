@@ -1,0 +1,106 @@
+name: Deploy to Production
+
+on:
+  workflow_dispatch:  # Allows manual triggering
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'  # Deploy on version tags
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        cache-dependency-path: package.json
+
+    - name: Install dependencies
+      run: npm run install-all
+
+    - name: Build application
+      run: npm run build:prod
+      env:
+        CI: false
+        NODE_ENV: production
+
+    - name: Verify build
+      run: |
+        if [ ! -d "client/build" ]; then
+          echo "❌ Build failed: client/build directory not found"
+          exit 1
+        fi
+        if [ ! -f "client/build/index.html" ]; then
+          echo "❌ Build failed: index.html not found"
+          exit 1
+        fi
+        echo "✅ Build verification successful"
+        ls -la client/build/ | head -10
+
+    - name: Test production server
+      run: |
+        echo "Testing production server startup..."
+        export NODE_ENV=production
+        export PORT=3001
+        
+        # Start server in background and test it
+        npm run start:prod &
+        SERVER_PID=$!
+        
+        # Wait a bit for server to start
+        sleep 3
+        
+        # Check if server process is running
+        if ps -p $SERVER_PID > /dev/null; then
+          echo "✅ Server started successfully"
+          # Try to make a request (will fail without MongoDB, but server should respond)
+          curl -f http://localhost:3001/ || echo "Server is running (API may require MongoDB)"
+          kill $SERVER_PID 2>/dev/null || true
+        else
+          echo "❌ Server failed to start"
+          exit 1
+        fi
+
+    - name: Create deployment archive
+      run: |
+        echo "Creating deployment archive..."
+        tar -czf deployment.tar.gz \
+          client/build \
+          routes \
+          models \
+          utils \
+          server.js \
+          package.json \
+          package-lock.json 2>/dev/null || true
+        echo "✅ Deployment archive created"
+
+    - name: Upload deployment artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: production-deployment
+        path: |
+          deployment.tar.gz
+          client/build/
+        retention-days: 30
+
+    # Uncomment and configure based on your deployment target
+    # - name: Deploy to server
+    #   uses: appleboy/ssh-action@master
+    #   with:
+    #     host: ${{ secrets.HOST }}
+    #     username: ${{ secrets.USERNAME }}
+    #     key: ${{ secrets.SSH_KEY }}
+    #     script: |
+    #       cd /path/to/app
+    #       git pull
+    #       npm run install-all
+    #       npm run build:prod
+    #       pm2 restart employee-evaluation || pm2 start npm --name "employee-evaluation" -- run start:prod
+

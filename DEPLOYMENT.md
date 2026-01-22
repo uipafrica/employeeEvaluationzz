@@ -85,3 +85,50 @@ The server automatically:
 - Serves API routes at `/api/*`
 - Uses CORS for cross-origin requests
 
+## GitHub CI/CD Pipeline
+
+The repository includes GitHub Actions workflows for automated building and testing:
+
+### Workflows
+
+1. **build.yml** - Builds and tests the application on every push/PR
+   - Installs dependencies
+   - Builds the frontend
+   - Verifies build output
+   - Tests server startup
+
+2. **ci-cd.yml** - Comprehensive CI/CD pipeline
+   - Builds on multiple Node.js versions
+   - Tests production server
+   - Creates deployment artifacts
+   - Runs on push to main/master/develop branches
+
+3. **deploy.yml** - Production deployment workflow
+   - Manual trigger or on version tags
+   - Full build and verification
+   - Creates deployment archive
+   - Ready for deployment to production servers
+
+### Using the CI/CD Pipeline
+
+The workflows run automatically on:
+- Push to main/master/develop branches
+- Pull requests to main/master/develop
+- Manual trigger (for deploy.yml)
+
+### Viewing Pipeline Status
+
+1. Go to your GitHub repository
+2. Click on the "Actions" tab
+3. View the status of recent workflow runs
+4. Click on a run to see detailed logs
+
+### Setting Up Secrets (for deployment)
+
+If you want to deploy automatically, add these secrets in GitHub Settings > Secrets:
+- `HOST` - Your server hostname/IP
+- `USERNAME` - SSH username
+- `SSH_KEY` - Private SSH key for deployment
+
+Then uncomment the deployment steps in `deploy.yml`.
+
